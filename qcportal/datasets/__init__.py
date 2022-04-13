@@ -1,8 +1,11 @@
+import os
+import sqlite3
 from typing import Union, Any
 
 import pydantic
 
 from .models import (
+    DatasetViewWrapper,
     BaseDataset,
     DatasetQueryModel,
     DatasetFetchEntryBody,
@@ -36,4 +39,19 @@ AllDatasetDataModelTypes = Union[
 
 def dataset_from_datamodel(data: AllDatasetDataModelTypes, client: Any) -> AllDatasetTypes:
     dataset_init = {"client": client, "dataset_type": data.collection_type, "raw_data": data}
+    return pydantic.parse_obj_as(AllDatasetTypes, dataset_init)
+
+
+def load_dataset_view(view_path: str):
+
+    dvw = DatasetViewWrapper(view_path=view_path)
+    raw_data = dvw.get_datamodel()
+
+    dataset_init = {
+        "client": None,
+        "dataset_type": raw_data["collection_type"],
+        "raw_data": raw_data,
+        "dataset_view": dvw,
+    }
+
     return pydantic.parse_obj_as(AllDatasetTypes, dataset_init)

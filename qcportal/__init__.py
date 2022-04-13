@@ -15,3 +15,4 @@ del get_versions, versions
 from .client import PortalClient
 from .client_base import PortalRequestError
 from .manager_client import ManagerClient
+from .datasets import load_dataset_view

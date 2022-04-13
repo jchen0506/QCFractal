@@ -1,13 +1,107 @@
 from __future__ import annotations
 
+import lzma
+import os
+import sqlite3
 from typing import Optional, Dict, Any, List, Iterable, Type, Tuple, Union, Callable
 
 import pandas as pd
-from pydantic import BaseModel, Extra, validator
+from pydantic import BaseModel, Extra, validator, PrivateAttr, parse_obj_as
 
 from qcportal.base_models import RestModelBase, validate_list_to_single
 from qcportal.records import PriorityEnum, RecordStatusEnum, record_from_datamodel
+from qcportal.serialization import deserialize
 from qcportal.utils import make_list
+
+
+class DatasetViewWrapper(BaseModel):
+    # TODO - needs typing
+
+    view_path: str
+    _sqlite_con = PrivateAttr()
+
+    def __init__(self, **data):
+        BaseModel.__init__(self, **data)
+        self._sqlite_con = sqlite3.connect(self.view_path)
+
+    @validator("view_path")
+    def validate_path(cls, v):
+        if not os.path.isfile(v):
+            raise RuntimeError(f"View file {v} does not exist or is not a file")
+        return os.path.abspath(v)
+
+    @staticmethod
+    def deserialize_dict(data_bytes) -> Dict[str, Any]:
+        data_decompressed = lzma.decompress(data_bytes)
+        return deserialize(data_decompressed, "application/msgpack")
+
+    @staticmethod
+    def deserialize_model(data_bytes, model):
+        data_dict = DatasetViewWrapper.deserialize_dict(data_bytes)
+        return parse_obj_as(model, data_dict)
+
+    def get_datamodel(self) -> Dict[str, Any]:
+        # Read raw_data (datamodel)
+        cur = self._sqlite_con.cursor()
+        raw_data_bytes = cur.execute("SELECT value FROM dataset_metadata WHERE key = 'raw_data'").fetchone()[0]
+        return self.deserialize_dict(raw_data_bytes)
+
+    def get_entry_names(self) -> List[str]:
+        cur = self._sqlite_con.cursor()
+        entry_names = cur.execute("SELECT name FROM dataset_entry")
+        return [x[0] for x in entry_names]
+
+    def get_specifications(self, specification_type) -> Dict[str, Any]:
+        cur = self._sqlite_con.cursor()
+
+        ret = {}
+        spec_info = cur.execute("SELECT name, data FROM dataset_specification")
+
+        for specification_name, specification_bytes in spec_info:
+            ret[specification_name] = self.deserialize_model(specification_bytes, specification_type)
+
+        return ret
+
+    def get_entries(self, entry_type, entry_names: Optional[Iterable[str]] = None) -> Dict[str, Any]:
+        cur = self._sqlite_con.cursor()
+
+        ret = {}
+        if entry_names is None:
+            entry_info = cur.execute("SELECT name, data FROM dataset_entry")
+
+            for entry_name, entry_bytes in entry_info:
+                ret[entry_name] = self.deserialize_model(entry_bytes, entry_type)
+        else:
+            # Doing a query with IN is kind of a pain. Just go one by one
+            entry_names = set(entry_names)
+            stmt = "SELECT name, data FROM dataset_entry WHERE name = (:entry_name)"
+
+            for entry_name in entry_names:
+                entry_name, entry_bytes = cur.execute(stmt, {"entry_name": entry_name}).fetchone()
+                ret[entry_name] = self.deserialize_model(entry_bytes, entry_type)
+
+        return ret
+
+    def get_record_item(self, record_item_type, entry_name: str, specification_name: str):
+        cur = self._sqlite_con.cursor()
+        stmt = """SELECT data FROM dataset_record
+                  WHERE entry_name = (:entry_name) AND specification_name = (:specification_name)"""
+        params = {"entry_name": entry_name, "specification_name": specification_name}
+        record_item = cur.execute(stmt, params).fetchone()
+        return self.deserialize_model(record_item[0], record_item_type)
+
+    def iterate_records(self, record_item_type):
+        cur = self._sqlite_con.cursor()
+        r = cur.execute("SELECT entry_name, specification_name, data FROM dataset_record")
+
+        for row in r:
+            if row is None:
+                break
+
+            entry_name, spec_name, record_item_data = row
+            record_item = self.deserialize_model(record_item_data, record_item_type)
+            record = record_from_datamodel(record_item.record, None)
+            yield entry_name, spec_name, record
 
 
 class BaseDataset(BaseModel):
@@ -49,6 +143,9 @@ class BaseDataset(BaseModel):
 
     # Some dataset options
     auto_fetch_missing: bool = True  # Automatically fetch missing records from the server
+
+    # If a view
+    dataset_view: Optional[DatasetViewWrapper] = None
 
     # To be overridden by the derived classes
     dataset_type: str
@@ -143,7 +240,7 @@ class BaseDataset(BaseModel):
             include=["*", "record"],
         )
 
-        record_info = self.client._auto_request(
+        record_item = self.client._auto_request(
             "post",
             f"v1/datasets/{self.dataset_type}/{self.id}/record_items/bulkFetch",
             DatasetFetchRecordItemsBody,
@@ -154,19 +251,21 @@ class BaseDataset(BaseModel):
         )
 
         if self.raw_data.record_items is None:
-            self.raw_data.record_items = record_info
+            self.raw_data.record_items = record_item
         else:
             # Merge in newly-downloaded records
             # what spec names and entries did we just download
-            new_info = [(x.specification_name, x.entry_name) for x in record_info]
+            new_info = [(x.specification_name, x.entry_name) for x in record_item]
 
             # Remove any items that match what we just downloaded, and then extend the list with the new items
             self.raw_data.record_items = [
                 x for x in self.raw_data.record_items if (x.specification_name, x.entry_name) not in new_info
             ]
-            self.raw_data.record_items.extend(record_info)
+            self.raw_data.record_items.extend(record_item)
 
     def _update_metadata(self):
+        self.assert_online()
+
         new_body = DatasetModifyMetadataBody(
             name=self.raw_data.name,
             description=self.raw_data.description,
@@ -178,8 +277,6 @@ class BaseDataset(BaseModel):
             default_tag=self.raw_data.default_tag,
             default_priority=self.raw_data.default_priority,
         )
-
-        self.assert_online()
 
         self.client._auto_request(
             "patch",
@@ -193,24 +290,32 @@ class BaseDataset(BaseModel):
 
     def _lookup_record(self, entry_name: str, specification_name: str):
 
+        if self.is_view:
+            record_item = self.dataset_view.get_record_item(self._record_item_type, entry_name, specification_name)
+            return record_from_datamodel(record_item.record, self.client)
+
+        # This function is not responsible for fetching
         if self.raw_data.record_items is None:
             return None
 
         for ri in self.raw_data.record_items:
             if ri.specification_name == specification_name and ri.entry_name == entry_name:
-                return record_from_datamodel(ri.record, self.client)
+                return record_from_datamodel(self.client, ri.record)
 
         return None
 
     def get_record(self, entry_name: str, specification_name: str):
 
-        # Fetch the records if needed
         r = self._lookup_record(entry_name, specification_name)
 
-        if r is None:
-            self.fetch_record_items(entry_name, specification_name)
+        if r is not None:
+            return r
 
-        return self._lookup_record(entry_name, specification_name)
+        elif not self.is_view:
+            self.fetch_record_items(entry_name, specification_name)
+            return self._lookup_record(entry_name, specification_name)
+
+        return None
 
     def submit(
         self,
@@ -610,6 +715,10 @@ class BaseDataset(BaseModel):
             raise RuntimeError("Dataset does not connected to a QCFractal server")
 
     @property
+    def is_view(self) -> bool:
+        return self.dataset_view is not None
+
+    @property
     def id(self) -> int:
         return self.raw_data.id
 
@@ -668,6 +777,9 @@ class BaseDataset(BaseModel):
 
     @property
     def specifications(self):
+        if self.is_view:
+            return self.dataset_view.get_specifications(self._specification_type)
+
         if self.raw_data.specifications is None:
             self.fetch_specifications()
 
@@ -675,6 +787,9 @@ class BaseDataset(BaseModel):
 
     @property
     def entry_names(self):
+        if self.is_view:
+            return self.dataset_view.get_entry_names()
+
         if self.raw_data.entry_names is None:
             self.fetch_entry_names()
 
@@ -682,16 +797,13 @@ class BaseDataset(BaseModel):
 
     @property
     def entries(self):
+        if self.is_view:
+            return self.dataset_view.get_entries(self._entry_type)
+
         if self.raw_data.entries is None:
             self.fetch_entries()
 
         return self.raw_data.entries
-
-    @property
-    def record_items(self):
-        if self.raw_data.record_items is None:
-            self.fetch_record_items()
-        return self.raw_data.record_items
 
     def _iterate_records(self):
         # Get an up-to-date list of entry names and specifications
@@ -704,7 +816,10 @@ class BaseDataset(BaseModel):
 
     @property
     def records(self):
-        return self._iterate_records()
+        if self.is_view:
+            return self.dataset_view.iterate_records(self._record_item_type)
+        else:
+            return self._iterate_records()
 
 
 class DatasetModifyMetadataBody(RestModelBase):
