@@ -86,6 +86,7 @@ class SQLAlchemySocket:
         from ..components.permissions.user_socket import UserSocket
         from ..components.permissions.role_socket import RoleSocket
         from ..components.serverinfo.sockets import ServerInfoSocket
+        from ..components.backgroundjobs.sockets import BackgroundJobSocket
         from ..components.managers.sockets import ManagerSocket
         from ..components.records.sockets import RecordSocket
         from ..components.tasks.sockets import TaskSocket
@@ -93,6 +94,7 @@ class SQLAlchemySocket:
         from ..components.datasets.sockets import DatasetSocket
 
         self.serverinfo = ServerInfoSocket(self)
+        self.backgroundjobs = BackgroundJobSocket(self)
         self.keywords = KeywordsSocket(self)
         self.molecules = MoleculeSocket(self)
         self.datasets = DatasetSocket(self)

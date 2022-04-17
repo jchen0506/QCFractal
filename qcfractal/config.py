@@ -269,6 +269,9 @@ class FractalConfig(ConfigBase):
         description="Geoip2 cites file path (.mmdb) for geolocating IP addresses. Defaults to [base_folder]/GeoLite2-City.mmdb. If this file is not available, geo-ip lookup will not be enabled",
     )
 
+    # Background jobs
+    background_processes: int = Field(0, description="Number of processes for background jobs. 0 disables background jobs and async requests")
+
     # Other settings blocks
     database: DatabaseConfig = Field(..., description="Configuration of the settings for the database")
     api: WebAPIConfig = Field(..., description="Configuration of the REST interface")
