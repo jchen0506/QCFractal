@@ -106,3 +106,4 @@ runinfo/
 
 .mypy_cache
 qcfractaltesting/MaxMind-DB
+.ipynb_checkpoints/

@@ -61,10 +61,8 @@ if __name__ == "__main__":
             "geoip": ["geoip2"],
             "docs": [
                 "sphinx",
-                "sphinx-automodapi",
                 "sphinx_rtd_theme",
                 "nbsphinx",
-                "ipython",
             ],
             "lint": ["black"],
             "tests": ["pytest", "pytest-cov", "codecov", "geoip2"],
