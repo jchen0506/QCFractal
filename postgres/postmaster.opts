@@ -1,0 +1,1 @@
+/opt/anaconda3/envs/qcadashboard/bin/postgres "-D" "/Users/jingchen/Documents/MolSSI/QCFractal/postgres"

@@ -1,0 +1,21 @@
+name: QCFractal Server
+enable_security: true
+allow_unauthenticated_read: true
+logfile: null
+loglevel: INFO
+statistics_frequency: 3600
+service_frequency: 60
+max_active_services: 20
+heartbeat_frequency: 1800
+log_access: false
+database:
+  base_folder: /Users/jingchen/Documents/MolSSI/QCFractal
+  host: localhost
+  port: 5434
+  database_name: qcfractal_default
+  own: true
+api:
+  host: 127.0.0.1
+  port: 7777
+  secret_key: brzLEtgLbIOfdPuxCDFCzMZiEvKFvMu0rTJNFd02cKE
+  jwt_secret_key: 8ylBNT_29vFwuua1B5F0QBA1V6D29VbUucxF2H8UBdo
