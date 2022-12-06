@@ -18,7 +18,7 @@ function InfoCard() {
 				setVersion(info.version)
 			})
 			.catch(err => console.log(err));
-	})
+	},[])
 
 	return (
 		<Card sx={{ minWidth: 100 }}>

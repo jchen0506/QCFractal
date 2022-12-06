@@ -1,12 +1,22 @@
-import * as React from 'react';
-import Button from '@mui/material/Button';
-import Dashboard from './Dashboard';
+import React from 'react';
+import {
+  Router,
+  Route,
+  Routes,
+} from '@reach/router';
+import ProtectedRoute from "./ProtectedRoute";
+import Login from "./Login"
+import Dashboard from "./Dashboard"
 
-function App() {
+export default function App() {
   return (
-		<Dashboard />
-	);
+    <Router>
+      <Routes>
+        <ProtectedRoute exact path="/admin">
+          <Dashboard />
+        </ProtectedRoute>
+        <Route exact path="/login" component={Login} />
+      </Routes>
+    </Router>
+	)
 }
-
-
-export default App;

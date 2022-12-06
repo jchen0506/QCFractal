@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import Avatar from '@mui/material/Avatar';
 import Button from '@mui/material/Button';
 import CssBaseline from '@mui/material/CssBaseline';
@@ -12,7 +12,6 @@ import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import Typography from '@mui/material/Typography';
 import Container from '@mui/material/Container';
 import { createTheme, ThemeProvider } from '@mui/material/styles';
-import { Navigate } from "react-router-dom";
 
 
 function Copyright(props) {
@@ -32,45 +31,21 @@ const theme = createTheme();
 
 export default function LogIn() {
 
-	const [logged,setLogged] = useState(false);
-	const [loginParams, setLoginParams] = useState({
-		user_id: "",
-		user_password: ""
-	})
+	const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
-	const handleFormChange = (event) => {
-    let loginParamsNew = { ...this.state.loginParams };
-    let val = event.target.value;
-    loginParamsNew[event.target.name] = val;
-    this.setState({
-      loginParams: loginParamsNew
-    });
-  };
- 
-	const login = (event) => {
-    let user_id = loginParams.user_id;
-    let user_password = loginParams.user_password;
-    if (user_id === "admin" && user_password === "123") {
+  const handleLogin = event => {
+    event.preventDefault();
+
+    if (username === "admin" && password === "123") {
       localStorage.setItem("token", "T");
-      setLogged(true);
+			setIsLoggedIn(true);
     }
-    event.preventDefault();
-  };
 
-  const handleSubmit = (event) => {
-    event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    console.log({
-      email: data.get('email'),
-      password: data.get('password'),
-    });
+    
   };
-
-	render() {
-		
-		if (localStorage.getItem("token")) {
-			return <Navigate to="/" />;
-		}
+	
 		
 		return (	
 			<ThemeProvider theme={theme}>
@@ -90,28 +65,28 @@ export default function LogIn() {
 						<Typography component="h1" variant="h5">
 							Sign in
 						</Typography>
-						<Box component="form" onSubmit={handleSubmit} noValidate sx={{ mt: 1 }}>
+						<Box component="form" onSubmit={handleLogin} noValidate sx={{ mt: 1 }}>
 							<TextField
 								margin="normal"
 								required
 								fullWidth
-								id="user_id"
-								label="User ID"
-								name="user_id"
+								id="username"
+								label="User Name"
+								name="username"
 								autoFocus
 
-								onChange={ this.handleFormChange }
+								onChange={event => setUsername(event.target.value)}
 							/>
 							<TextField
 								margin="normal"
 								required
 								fullWidth
-								name="password"
+								name="user_password"
 								label="Password"
 								type="password"
 								id="password"
 								autoComplete="current-password"
-								onChange={ this.handleFormChange} 
+								onChange={event => setPassword(event.target.value)}
 							/>
 							<FormControlLabel
 								control={<Checkbox value="remember" color="primary" />}
@@ -143,6 +118,6 @@ export default function LogIn() {
 				</Container>
 			</ThemeProvider>
 		);
-	}
+
   
 }
